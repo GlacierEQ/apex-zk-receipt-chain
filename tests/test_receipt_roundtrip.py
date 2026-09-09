@@ -52,3 +52,19 @@ def test_export_manifest_format(tmp_path):
 def test_empty_chain_verification():
     chain = ReceiptChain()
     assert chain.verify() == True
+
+def test_verify_manifest_detects_root_swap(tmp_path):
+    chain = ReceiptChain()
+    chain.append("OP001", {"action": "create"})
+    chain.append("OP002", {"action": "mutate"})
+    path = tmp_path / "BATES_MANIFEST.json"
+    chain.export_manifest(str(path))
+    assert chain.verify_manifest(str(path)) is True
+    payload = json.loads(path.read_text())
+    payload["root_hash"] = "0" * 64
+    path.write_text(json.dumps(payload))
+    assert chain.verify_manifest(str(path)) is False
+
+def test_verify_manifest_rejects_missing_file(tmp_path):
+    chain = ReceiptChain()
+    assert chain.verify_manifest(str(tmp_path / "nope.json")) is False

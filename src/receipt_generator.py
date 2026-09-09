@@ -88,3 +88,45 @@ class ReceiptChain:
         }
         with open(path, "w") as f:
             json.dump(manifest, f, indent=2)
+
+    def verify_manifest(self, path: str) -> bool:
+        """Fail closed on a on-disk Bates-style manifest.
+
+        Recomputes every chain_hash from stored fields and checks root_hash.
+        A mutated JSON that still `verify()`s in memory must not pass here.
+        """
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return False
+        receipts = data.get("receipts")
+        if not isinstance(receipts, list):
+            return False
+        prev = "0" * 64
+        last_hash = prev
+        for i, raw in enumerate(receipts):
+            if not isinstance(raw, dict):
+                return False
+            try:
+                index = int(raw["index"])
+                prev_hash = str(raw["prev_hash"])
+                operation_id = str(raw["operation_id"])
+                timestamp = float(raw["timestamp"])
+                changeset_hash = str(raw["changeset_hash"])
+                chain_hash = str(raw["chain_hash"])
+            except (KeyError, TypeError, ValueError):
+                return False
+            if index != i:
+                return False
+            if prev_hash != prev:
+                return False
+            expected = self._compute_chain_hash(prev_hash, operation_id, timestamp, changeset_hash)
+            if expected != chain_hash:
+                return False
+            prev = chain_hash
+            last_hash = chain_hash
+        declared_root = data.get("root_hash")
+        if declared_root is None:
+            return True
+        return declared_root == last_hash
